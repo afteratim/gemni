@@ -1,20 +1,18 @@
 import os
 import base64
+import requests
 from flask import Flask, render_template, request, jsonify
-from groq import Groq
 
 app = Flask(__name__)
-
-# Initialize Groq API
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 PROMPT = """
 Extract data from this handwritten table image following these strict rules:
 1. Find the Date at the top right and format it as DD-MM-YYYY.
-2. For each row in the table:
+2. Ignore subheading text rows (like city or company names written across the middle of the table).
+3. For each numbered data row in the table:
    - Take the G.R. number (ONLY the digits BEFORE the slash '/').
-   - Take the CTNS number from the first column (ignore the circled total at the bottom, and ignore any '-' or dots before the number).
-3. Format each row exactly like this:
+   - Take the CTNS number from the first column (ignore the number after '/' in G.R., ignore the circled total at the bottom, and ignore any '-' or dots).
+4. Format each row exactly like this:
 G.R.,"Date - CTNS CRTNS"
 
 Example output:
@@ -23,6 +21,57 @@ Example output:
 
 Return ONLY the formatted lines. Do not include any extra text, markdown, or explanations.
 """
+
+def clean_output(text):
+    return text.replace("```csv", "").replace("```text", "").replace("```", "").strip()
+
+def call_groq(image_bytes, mime_type):
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise Exception("GROQ_API_KEY is not set in Render Environment Variables")
+
+    b64_image = base64.b64encode(image_bytes).decode('utf-8')
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    # Try Groq's newest Llama 4 Vision models in order
+    models = [
+        "meta-llama/llama-4-maverick-17b-128e-instruct",
+        "meta-llama/llama-4-scout-17b-16e-instruct"
+    ]
+
+    last_error = None
+    for model_name in models:
+        payload = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": PROMPT},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
+                        }
+                    ]
+                }
+            ],
+            "temperature": 0.1
+        }
+        res = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=45
+        )
+        if res.status_code == 200:
+            return clean_output(res.json()['choices'][0]['message']['content'])
+        else:
+            last_error = f"{res.status_code} - {res.text}"
+
+    raise Exception(last_error)
 
 @app.route('/')
 def index():
@@ -40,38 +89,15 @@ def process_images():
         if file.filename == '':
             continue
         try:
-            # Read image and convert to Base64
             image_bytes = file.read()
-            base64_image = base64.b64encode(image_bytes).decode('utf-8')
+            mime_type = file.mimetype or 'image/jpeg'
             
-            # Send directly to Groq's Vision Model
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": PROMPT},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                model="llama-3.2-11b-vision-preview", 
-            )
-            
-            text = chat_completion.choices[0].message.content
-            if text:
-                all_results.append(text.strip())
-                
+            result = call_groq(image_bytes, mime_type)
+            all_results.append(result)
         except Exception as e:
             all_results.append(f"Error processing {file.filename}: {str(e)}")
 
-    final_output = "\n".join(all_results)
-    return jsonify({'result': final_output})
+    return jsonify({'result': "\n".join(all_results)})
 
 if __name__ == '__main__':
     app.run(debug=True)
