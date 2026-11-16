@@ -1,12 +1,12 @@
 import os
+import base64
 from flask import Flask, render_template, request, jsonify
-from google import genai
-from google.genai import types
+from groq import Groq
 
 app = Flask(__name__)
 
-# Initialize Gemini API
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+# Initialize Groq API
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 PROMPT = """
 Extract data from this handwritten table image following these strict rules:
@@ -40,21 +40,32 @@ def process_images():
         if file.filename == '':
             continue
         try:
-            # Read raw image bytes directly in memory
+            # Read image and convert to Base64
             image_bytes = file.read()
-            mime_type = file.mimetype or 'image/jpeg'
+            base64_image = base64.b64encode(image_bytes).decode('utf-8')
             
-            # Send directly to Gemini
-            response = client.models.generate_content(
-                model='gemini-3.8-flash',
-                contents=[
-                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                    PROMPT
-                ]
+            # Send directly to Groq's Vision Model
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": PROMPT},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                model="llama-3.2-11b-vision-preview", 
             )
             
-            if response.text:
-                all_results.append(response.text.strip())
+            text = chat_completion.choices[0].message.content
+            if text:
+                all_results.append(text.strip())
                 
         except Exception as e:
             all_results.append(f"Error processing {file.filename}: {str(e)}")
