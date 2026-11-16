@@ -1,7 +1,10 @@
 import os
+import time
 import base64
 import requests
 from flask import Flask, render_template, request, jsonify
+from google import genai
+from google.genai import types
 
 app = Flask(__name__)
 
@@ -23,12 +26,43 @@ Return ONLY the formatted lines. Do not include any extra text, markdown, or exp
 """
 
 def clean_output(text):
-    return text.replace("```csv", "").replace("```text", "").replace("```", "").strip()
+    # Clean any markdown blocks or extra spaces
+    cleaned = text.replace("```csv", "").replace("```text", "").replace("```", "").strip()
+    lines = [line.strip() for line in cleaned.splitlines() if line.strip() and ',"' in line]
+    return "\n".join(lines) if lines else cleaned
+
+def call_gemini(image_bytes, mime_type):
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise Exception("GEMINI_API_KEY not found in Render Environment")
+
+    client = genai.Client(api_key=api_key)
+    last_error = None
+
+    # Try up to 2 times before switching to Groq
+    for attempt in range(2):
+        try:
+            response = client.models.generate_content(
+                model='gemini-3.8-flash',
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                    PROMPT
+                ]
+            )
+            if response.text:
+                return clean_output(response.text)
+        except Exception as e:
+            last_error = e
+            if "503" in str(e) or "UNAVAILABLE" in str(e) or "429" in str(e):
+                time.sleep(2)
+            else:
+                break
+    raise Exception(f"Gemini Error: {str(last_error)}")
 
 def call_groq(image_bytes, mime_type):
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        raise Exception("GROQ_API_KEY is not set in Render Environment Variables")
+        raise Exception("GROQ_API_KEY not found in Render Environment")
 
     b64_image = base64.b64encode(image_bytes).decode('utf-8')
     headers = {
@@ -36,7 +70,7 @@ def call_groq(image_bytes, mime_type):
         "Content-Type": "application/json"
     }
 
-    # Try Groq's newest Llama 4 Vision models in order
+    # Newest active Groq Llama 4 Vision models
     models = [
         "meta-llama/llama-4-maverick-17b-128e-instruct",
         "meta-llama/llama-4-scout-17b-16e-instruct"
@@ -67,11 +101,12 @@ def call_groq(image_bytes, mime_type):
             timeout=45
         )
         if res.status_code == 200:
-            return clean_output(res.json()['choices'][0]['message']['content'])
+            content = res.json()['choices'][0]['message']['content']
+            return clean_output(content)
         else:
             last_error = f"{res.status_code} - {res.text}"
 
-    raise Exception(last_error)
+    raise Exception(f"Groq Error: {last_error}")
 
 @app.route('/')
 def index():
@@ -82,18 +117,31 @@ def process_images():
     if 'images' not in request.files:
         return jsonify({'error': 'No images uploaded'}), 400
     
+    provider = request.form.get('provider', 'auto')
     files = request.files.getlist('images')
     all_results = []
 
     for file in files:
         if file.filename == '':
             continue
+        
+        image_bytes = file.read()
+        mime_type = file.mimetype or 'image/jpeg'
+
         try:
-            image_bytes = file.read()
-            mime_type = file.mimetype or 'image/jpeg'
-            
-            result = call_groq(image_bytes, mime_type)
+            if provider == 'gemini':
+                result = call_gemini(image_bytes, mime_type)
+            elif provider == 'groq':
+                result = call_groq(image_bytes, mime_type)
+            else:
+                # AUTO MODE: Try Gemini first, fallback to Groq if Gemini is busy/down
+                try:
+                    result = call_gemini(image_bytes, mime_type)
+                except Exception as gemini_err:
+                    result = call_groq(image_bytes, mime_type)
+
             all_results.append(result)
+
         except Exception as e:
             all_results.append(f"Error processing {file.filename}: {str(e)}")
 
