@@ -1,12 +1,11 @@
 import os
 from flask import Flask, render_template, request, jsonify
 from google import genai
-from PIL import Image
-import io
+from google.genai import types
 
 app = Flask(__name__)
 
-# Initialize Gemini API (You will set this key in Render's settings)
+# Initialize Gemini API
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 PROMPT = """
@@ -41,14 +40,17 @@ def process_images():
         if file.filename == '':
             continue
         try:
-            # Read image in memory (No disk required!)
+            # Read raw image bytes directly in memory
             image_bytes = file.read()
-            image = Image.open(io.BytesIO(image_bytes))
+            mime_type = file.mimetype or 'image/jpeg'
             
-            # Send to Gemini 2.5 Flash
+            # Send directly to Gemini 2.5 Flash
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
-                contents=[image, PROMPT]
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                    PROMPT
+                ]
             )
             
             if response.text:
