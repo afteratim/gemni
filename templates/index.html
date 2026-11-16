@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G.R. Image Extractor</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
+        .upload-box { border: 2px dashed #ccc; padding: 30px; text-align: center; margin-bottom: 20px; border-radius: 8px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; }
+        button:disabled { background: #ccc; }
+        textarea { width: 100%; height: 300px; margin-top: 20px; padding: 10px; font-family: monospace; font-size: 14px; }
+        .actions { margin-top: 10px; display: flex; gap: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>Upload G.R. Sheets</h2>
+    <div class="upload-box">
+        <input type="file" id="imageInput" multiple accept="image/*">
+        <br><br>
+        <button id="processBtn" onclick="uploadImages()">Extract Data</button>
+    </div>
+
+    <div id="loading" style="display:none; color: #007bff; font-weight: bold;">Processing images, please wait...</div>
+
+    <textarea id="resultBox" placeholder="Your results will appear here..." readonly></textarea>
+    
+    <div class="actions">
+        <button onclick="copyResult()" style="background: #28a745;">Copy Text</button>
+        <button onclick="downloadCSV()" style="background: #17a2b8;">Download CSV</button>
+    </div>
+
+    <script>
+        async function uploadImages() {
+            const input = document.getElementById('imageInput');
+            if (input.files.length === 0) {
+                alert("Please select at least one image!");
+                return;
+            }
+
+            const formData = new FormData();
+            for (let i = 0; i < input.files.length; i++) {
+                formData.append('images', input.files[i]);
+            }
+
+            document.getElementById('processBtn').disabled = true;
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('resultBox').value = '';
+
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                document.getElementById('resultBox').value = data.result || data.error;
+            } catch (err) {
+                alert("Error processing images.");
+            } finally {
+                document.getElementById('processBtn').disabled = false;
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function copyResult() {
+            const box = document.getElementById('resultBox');
+            box.select();
+            document.execCommand('copy');
+            alert("Copied to clipboard!");
+        }
+
+        function downloadCSV() {
+            const text = document.getElementById('resultBox').value;
+            if (!text) return alert("Nothing to download!");
+            const blob = new Blob([text], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'gr_data.csv';
+            a.click();
+        }
+    </script>
+</body>
+</html>
