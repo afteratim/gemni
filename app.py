@@ -1,10 +1,7 @@
 import os
-import time
 import base64
 import requests
 from flask import Flask, render_template, request, jsonify
-from google import genai
-from google.genai import types
 
 app = Flask(__name__)
 
@@ -26,38 +23,9 @@ Return ONLY the formatted lines. Do not include any extra text, markdown, or exp
 """
 
 def clean_output(text):
-    # Clean any markdown blocks or extra spaces
     cleaned = text.replace("```csv", "").replace("```text", "").replace("```", "").strip()
     lines = [line.strip() for line in cleaned.splitlines() if line.strip() and ',"' in line]
     return "\n".join(lines) if lines else cleaned
-
-def call_gemini(image_bytes, mime_type):
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise Exception("GEMINI_API_KEY not found in Render Environment")
-
-    client = genai.Client(api_key=api_key)
-    last_error = None
-
-    # Try up to 2 times before switching to Groq
-    for attempt in range(2):
-        try:
-            response = client.models.generate_content(
-                model='gemini-3.8-flash',
-                contents=[
-                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                    PROMPT
-                ]
-            )
-            if response.text:
-                return clean_output(response.text)
-        except Exception as e:
-            last_error = e
-            if "503" in str(e) or "UNAVAILABLE" in str(e) or "429" in str(e):
-                time.sleep(2)
-            else:
-                break
-    raise Exception(f"Gemini Error: {str(last_error)}")
 
 def call_groq(image_bytes, mime_type):
     api_key = os.environ.get("GROQ_API_KEY")
@@ -70,7 +38,6 @@ def call_groq(image_bytes, mime_type):
         "Content-Type": "application/json"
     }
 
-    # Newest active Groq Llama 4 Vision models
     models = [
         "meta-llama/llama-4-maverick-17b-128e-instruct",
         "meta-llama/llama-4-scout-17b-16e-instruct"
@@ -94,19 +61,48 @@ def call_groq(image_bytes, mime_type):
             ],
             "temperature": 0.1
         }
-        res = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=45
-        )
-        if res.status_code == 200:
-            content = res.json()['choices'][0]['message']['content']
-            return clean_output(content)
-        else:
-            last_error = f"{res.status_code} - {res.text}"
+        try:
+            res = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=15  # Strict 15s timeout so Render never crashes
+            )
+            if res.status_code == 200:
+                content = res.json()['choices'][0]['message']['content']
+                return clean_output(content)
+            else:
+                last_error = f"{res.status_code} - {res.text}"
+        except Exception as e:
+            last_error = str(e)
 
     raise Exception(f"Groq Error: {last_error}")
+
+def call_gemini(image_bytes, mime_type):
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise Exception("GEMINI_API_KEY not found in Render Environment")
+
+    b64_image = base64.b64encode(image_bytes).decode('utf-8')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
+    
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": PROMPT},
+                {"inline_data": {"mime_type": mime_type, "data": b64_image}}
+            ]
+        }]
+    }
+
+    # Strict 12s timeout so if Google is busy (503), it switches to Groq immediately
+    res = requests.post(url, json=payload, timeout=12)
+    if res.status_code == 200:
+        data = res.json()
+        text = data['candidates'][0]['content']['parts'][0]['text']
+        return clean_output(text)
+    else:
+        raise Exception(f"Gemini {res.status_code}: {res.text}")
 
 @app.route('/')
 def index():
@@ -134,11 +130,11 @@ def process_images():
             elif provider == 'groq':
                 result = call_groq(image_bytes, mime_type)
             else:
-                # AUTO MODE: Try Gemini first, fallback to Groq if Gemini is busy/down
+                # AUTO MODE: Try Groq first (fastest, 2 sec), fallback to Gemini if needed
                 try:
-                    result = call_gemini(image_bytes, mime_type)
-                except Exception as gemini_err:
                     result = call_groq(image_bytes, mime_type)
+                except Exception:
+                    result = call_gemini(image_bytes, mime_type)
 
             all_results.append(result)
 
