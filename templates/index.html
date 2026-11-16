@@ -7,7 +7,9 @@
     <style>
         body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
         .upload-box { border: 2px dashed #ccc; padding: 30px; text-align: center; margin-bottom: 20px; border-radius: 8px; }
-        button { background: #007bff; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; }
+        select, button { padding: 10px 15px; font-size: 15px; border-radius: 5px; }
+        select { border: 1px solid #ccc; margin-bottom: 15px; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; }
         button:disabled { background: #ccc; }
         textarea { width: 100%; height: 300px; margin-top: 20px; padding: 10px; font-family: monospace; font-size: 14px; }
         .actions { margin-top: 10px; display: flex; gap: 10px; }
@@ -17,12 +19,19 @@
 
     <h2>Upload G.R. Sheets</h2>
     <div class="upload-box">
+        <label for="providerSelect"><strong>AI Model:</strong> </label>
+        <select id="providerSelect">
+            <option value="auto">Auto (Gemini + Groq Backup)</option>
+            <option value="groq">Groq Only (Fastest)</option>
+            <option value="gemini">Gemini Only</option>
+        </select>
+        <br><br>
         <input type="file" id="imageInput" multiple accept="image/*">
         <br><br>
         <button id="processBtn" onclick="uploadImages()">Extract Data</button>
     </div>
 
-    <div id="loading" style="display:none; color: #007bff; font-weight: bold;">Processing images, please wait...</div>
+    <div id="loading" style="display:none; color: #007bff; font-weight: bold;"></div>
 
     <textarea id="resultBox" placeholder="Your results will appear here..." readonly></textarea>
     
@@ -34,33 +43,50 @@
     <script>
         async function uploadImages() {
             const input = document.getElementById('imageInput');
+            const provider = document.getElementById('providerSelect').value;
+            const resultBox = document.getElementById('resultBox');
+            const loading = document.getElementById('loading');
+            const btn = document.getElementById('processBtn');
+
             if (input.files.length === 0) {
                 alert("Please select at least one image!");
                 return;
             }
 
-            const formData = new FormData();
+            btn.disabled = true;
+            loading.style.display = 'block';
+            resultBox.value = '';
+
+            // Process images one by one so Render never times out
             for (let i = 0; i < input.files.length; i++) {
-                formData.append('images', input.files[i]);
+                const file = input.files[i];
+                loading.innerText = `Processing image ${i + 1} of ${input.files.length} (${file.name})...`;
+
+                const formData = new FormData();
+                formData.append('images', file);
+                formData.append('provider', provider);
+
+                try {
+                    const response = await fetch('/process', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const text = await response.text();
+                    try {
+                        const data = JSON.parse(text);
+                        const output = data.result || data.error;
+                        resultBox.value += (resultBox.value ? '\n' : '') + output;
+                    } catch (e) {
+                        resultBox.value += `\n[Server Timeout/Error on ${file.name}]: Status ${response.status}`;
+                    }
+                } catch (err) {
+                    resultBox.value += `\n[Network Error on ${file.name}]: ${err.message}`;
+                }
             }
 
-            document.getElementById('processBtn').disabled = true;
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('resultBox').value = '';
-
-            try {
-                const response = await fetch('/process', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-                document.getElementById('resultBox').value = data.result || data.error;
-            } catch (err) {
-                alert("Error processing images.");
-            } finally {
-                document.getElementById('processBtn').disabled = false;
-                document.getElementById('loading').style.display = 'none';
-            }
+            btn.disabled = false;
+            loading.style.display = 'none';
         }
 
         function copyResult() {
