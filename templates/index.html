@@ -3,109 +3,431 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>G.R. Image Extractor</title>
+    <title>G.R. Data Extractor Pro</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
-        .upload-box { border: 2px dashed #ccc; padding: 30px; text-align: center; margin-bottom: 20px; border-radius: 8px; }
-        select, button { padding: 10px 15px; font-size: 15px; border-radius: 5px; }
-        select { border: 1px solid #ccc; margin-bottom: 15px; }
-        button { background: #007bff; color: white; border: none; cursor: pointer; }
-        button:disabled { background: #ccc; }
-        textarea { width: 100%; height: 300px; margin-top: 20px; padding: 10px; font-family: monospace; font-size: 14px; }
-        .actions { margin-top: 10px; display: flex; gap: 10px; }
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --success: #10b981;
+            --danger: #ef4444;
+            --bg: #f3f4f6;
+            --card-bg: #ffffff;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            padding: 24px 16px;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #111827;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .provider-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--card-bg);
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        .provider-box label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--muted);
+        }
+
+        .provider-box select {
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--primary);
+            background: transparent;
+            cursor: pointer;
+            outline: none;
+        }
+
+        /* Main Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Drop & Paste Zone */
+        .drop-zone {
+            border: 2px dashed #cbd5e1;
+            border-radius: 10px;
+            padding: 28px 16px;
+            text-align: center;
+            background: #f8fafc;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--primary);
+            background: #eef2ff;
+        }
+
+        .drop-zone-icon {
+            font-size: 36px;
+            margin-bottom: 8px;
+        }
+
+        .drop-zone h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #334155;
+        }
+
+        .drop-zone p {
+            font-size: 13px;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+
+        .kbd {
+            background: #e2e8f0;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-family: monospace;
+            font-weight: 700;
+            color: #1e293b;
+            font-size: 12px;
+        }
+
+        /* Image Thumbnails Queue */
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+            gap: 10px;
+            margin-top: 16px;
+            max-height: 240px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .thumb-card {
+            position: relative;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            aspect-ratio: 1;
+            background: #f1f5f9;
+        }
+
+        .thumb-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .thumb-remove {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            border: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .thumb-status {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            font-size: 11px;
+            font-weight: 600;
+            text-align: center;
+            padding: 2px 4px;
+            background: rgba(15, 23, 42, 0.75);
+            color: white;
+        }
+
+        .thumb-status.done { background: rgba(16, 185, 129, 0.9); }
+        .thumb-status.error { background: rgba(239, 68, 68, 0.9); }
+        .thumb-status.working { background: rgba(79, 70, 229, 0.9); }
+
+        /* Buttons */
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 11px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+        .btn-secondary { background: #e5e7eb; color: #374151; flex: 0.4; }
+        .btn-secondary:hover:not(:disabled) { background: #d1d5db; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-success:hover { background: #059669; }
+        .btn-outline { background: #f8fafc; border: 1px solid #cbd5e1; color: #334155; }
+        .btn-outline:hover { background: #f1f5f9; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        /* Progress Bar */
+        .progress-wrapper {
+            margin-top: 14px;
+            display: none;
+        }
+
+        .progress-text {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 99px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--primary);
+            transition: width 0.3s ease;
+        }
+
+        /* Output Area */
+        .badge {
+            font-size: 12px;
+            padding: 3px 10px;
+            border-radius: 99px;
+            background: #eef2ff;
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        textarea {
+            width: 100%;
+            flex: 1;
+            min-height: 290px;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 13.5px;
+            resize: vertical;
+            background: #f8fafc;
+            color: #0f172a;
+            outline: none;
+        }
+
+        textarea:focus {
+            border-color: var(--primary);
+            background: #fff;
+        }
+
+        /* Toast Notification */
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #1e293b;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2);
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.25s ease;
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        #toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body>
 
-    <h2>Upload G.R. Sheets</h2>
-    <div class="upload-box">
-        <label for="providerSelect"><strong>AI Model:</strong> </label>
-        <select id="providerSelect">
-            <option value="auto">Auto (Gemini + Groq Backup)</option>
-            <option value="groq">Groq Only (Fastest)</option>
-            <option value="gemini">Gemini Only</option>
-        </select>
-        <br><br>
-        <input type="file" id="imageInput" multiple accept="image/*">
-        <br><br>
-        <button id="processBtn" onclick="uploadImages()">Extract Data</button>
+<div class="container">
+    <!-- Top Header -->
+    <div class="header">
+        <h1>📋 G.R. Sheet Extractor</h1>
+        <div class="provider-box">
+            <label for="providerSelect">AI Engine:</label>
+            <select id="providerSelect">
+                <option value="auto">Auto (Gemini + Groq)</option>
+                <option value="gemini">Gemini Only</option>
+                <option value="groq">Groq Only</option>
+            </select>
+        </div>
     </div>
 
-    <div id="loading" style="display:none; color: #007bff; font-weight: bold;"></div>
+    <!-- Two Column Layout -->
+    <div class="grid">
+        <!-- Left Card: Upload & Paste -->
+        <div class="card">
+            <div class="card-title">
+                <span>1. Add Images</span>
+                <span class="badge" id="imageCountBadge">0 Images</span>
+            </div>
 
-    <textarea id="resultBox" placeholder="Your results will appear here..." readonly></textarea>
+            <div class="drop-zone" id="dropZone" onclick="document.getElementById('imageInput').click()">
+                <div class="drop-zone-icon">📸</div>
+                <h3>Click to Browse or Drag & Drop</h3>
+                <p>Or simply press <span class="kbd">Ctrl</span> + <span class="kbd">V</span> anywhere to paste copied images!</p>
+                <input type="file" id="imageInput" multiple accept="image/*" style="display:none">
+            </div>
+
+            <!-- Thumbnails Preview -->
+            <div class="preview-grid" id="previewGrid"></div>
+
+            <!-- Progress Bar -->
+            <div class="progress-wrapper" id="progressWrapper">
+                <div class="progress-text">
+                    <span id="progressStatus">Processing...</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progressBar"></div>
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-primary" id="processBtn" onclick="uploadImages()">
+                    ⚡ Extract Data
+                </button>
+                <button class="btn btn-secondary" id="clearBtn" onclick="clearQueue()">
+                    🗑️ Clear
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Card: Results -->
+        <div class="card">
+            <div class="card-title">
+                <span>2. Extracted Output</span>
+                <span class="badge" id="rowCountBadge">0 Rows</span>
+            </div>
+
+            <textarea id="resultBox" placeholder='17195,"04-11-2026 - 15 CRTNS"&#10;54739,"04-11-2026 - 10 CRTNS"' oninput="updateRowCount()"></textarea>
+
+            <div class="btn-group">
+                <button class="btn btn-success" onclick="copyResult()">
+                    📋 Copy Result
+                </button>
+                <button class="btn btn-outline" onclick="downloadCSV()">
+                    ⬇️ Download CSV
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toast">Copied to clipboard!</div>
+
+<script>
+    let imageQueue = [];
+    let pasteCounter = 1;
+
+    const imageInput = document.getElementById('imageInput');
+    const dropZone = document.getElementById('dropZone');
+    const previewGrid = document.getElementById('previewGrid');
+    const imageCountBadge = document.getElementById('imageCountBadge');
+    const resultBox = document.getElementById('resultBox');
+    const rowCountBadge = document.getElementById('rowCountBadge');
+
+    // 1. Handle File Input Browse
+    imageInput.addEventListener('change', (e) => {
+        addFilesToQueue(e.target.files);
+        imageInput.value = ''; // Reset so same file can be selected again if needed
+    });
+
+    // 2. Handle Drag & Drop
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
     
-    <div class="actions">
-        <button onclick="copyResult()" style="background: #28a745;">Copy Text</button>
-        <button onclick="downloadCSV()" style="background: #17a2b8;">Download CSV</button>
-    </div>
-
-    <script>
-        async function uploadImages() {
-            const input = document.getElementById('imageInput');
-            const provider = document.getElementById('providerSelect').value;
-            const resultBox = document.getElementById('resultBox');
-            const loading = document.getElementById('loading');
-            const btn = document.getElementById('processBtn');
-
-            if (input.files.length === 0) {
-                alert("Please select at least one image!");
-                return;
-            }
-
-            btn.disabled = true;
-            loading.style.display = 'block';
-            resultBox.value = '';
-
-            // Process images one by one so Render never times out
-            for (let i = 0; i < input.files.length; i++) {
-                const file = input.files[i];
-                loading.innerText = `Processing image ${i + 1} of ${input.files.length} (${file.name})...`;
-
-                const formData = new FormData();
-                formData.append('images', file);
-                formData.append('provider', provider);
-
-                try {
-                    const response = await fetch('/process', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    
-                    const text = await response.text();
-                    try {
-                        const data = JSON.parse(text);
-                        const output = data.result || data.error;
-                        resultBox.value += (resultBox.value ? '\n' : '') + output;
-                    } catch (e) {
-                        resultBox.value += `\n[Server Timeout/Error on ${file.name}]: Status ${response.status}`;
-                    }
-                } catch (err) {
-                    resultBox.value += `\n[Network Error on ${file.name}]: ${err.message}`;
-                }
-            }
-
-            btn.disabled = false;
-            loading.style.display = 'none';
-        }
-
-        function copyResult() {
-            const box = document.getElementById('resultBox');
-            box.select();
-            document.execCommand('copy');
-            alert("Copied to clipboard!");
-        }
-
-        function downloadCSV() {
-            const text = document.getElementById('resultBox').value;
-            if (!text) return alert("Nothing to download!");
-            const blob = new Blob([text], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'gr_data.csv';
-            a.click();
-        }
-    </script>
-</body>
-</html>
