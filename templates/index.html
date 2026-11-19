@@ -430,4 +430,216 @@
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropZone.classList.add('dragover');
-    
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            addFilesToQueue(e.dataTransfer.files);
+        }
+    });
+
+    // 3. Handle Ctrl+V Copy-Paste Anywhere on Page
+    window.addEventListener('paste', (e) => {
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        const pastedFiles = [];
+
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const blob = items[i].getAsFile();
+                const ext = blob.type.split('/')[1] || 'png';
+                const customFile = new File([blob], `Pasted_Image_${pasteCounter++}.${ext}`, { type: blob.type });
+                pastedFiles.push(customFile);
+            }
+        }
+
+        if (pastedFiles.length > 0) {
+            e.preventDefault();
+            addFilesToQueue(pastedFiles);
+            showToast(`📸 Pasted ${pastedFiles.length} image(s)!`);
+        }
+    });
+
+    function addFilesToQueue(files) {
+        for (let i = 0; i < files.length; i++) {
+            if (files[i].type.startsWith('image/')) {
+                imageQueue.push({
+                    file: files[i],
+                    id: Date.now() + Math.random(),
+                    status: 'Pending'
+                });
+            }
+        }
+        renderQueue();
+    }
+
+    function removeImage(id) {
+        imageQueue = imageQueue.filter(item => item.id !== id);
+        renderQueue();
+    }
+
+    function clearQueue() {
+        imageQueue = [];
+        pasteCounter = 1;
+        renderQueue();
+        document.getElementById('progressWrapper').style.display = 'none';
+        showToast("Queue cleared");
+    }
+
+    function renderQueue() {
+        previewGrid.innerHTML = '';
+        imageCountBadge.innerText = `${imageQueue.length} Image${imageQueue.length === 1 ? '' : 's'}`;
+
+        imageQueue.forEach((item, index) => {
+            const card = document.createElement('div');
+            card.className = 'thumb-card';
+
+            const img = document.createElement('img');
+            img.src = URL.createObjectURL(item.file);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'thumb-remove';
+            removeBtn.innerHTML = '✕';
+            removeBtn.title = 'Remove image';
+            removeBtn.onclick = (e) => {
+                e.stopPropagation();
+                removeImage(item.id);
+            };
+
+            const status = document.createElement('div');
+            status.id = `status-${item.id}`;
+            status.className = 'thumb-status';
+            status.innerText = `#${index + 1} Ready`;
+
+            card.appendChild(img);
+            card.appendChild(removeBtn);
+            card.appendChild(status);
+            previewGrid.appendChild(card);
+        });
+    }
+
+    async function uploadImages() {
+        if (imageQueue.length === 0) {
+            showToast("⚠️ Please add or paste at least one image!");
+            return;
+        }
+
+        const provider = document.getElementById('providerSelect').value;
+        const processBtn = document.getElementById('processBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const progressWrapper = document.getElementById('progressWrapper');
+        const progressBar = document.getElementById('progressBar');
+        const progressStatus = document.getElementById('progressStatus');
+        const progressPercent = document.getElementById('progressPercent');
+
+        processBtn.disabled = true;
+        clearBtn.disabled = true;
+        progressWrapper.style.display = 'block';
+        resultBox.value = '';
+        updateRowCount();
+
+        for (let i = 0; i < imageQueue.length; i++) {
+            const item = imageQueue[i];
+            const statusEl = document.getElementById(`status-${item.id}`);
+            
+            const pct = Math.round((i / imageQueue.length) * 100);
+            progressBar.style.width = `${pct}%`;
+            progressPercent.innerText = `${pct}%`;
+            progressStatus.innerText = `Reading image ${i + 1} of ${imageQueue.length}...`;
+
+            if (statusEl) {
+                statusEl.className = 'thumb-status working';
+                statusEl.innerText = 'Reading...';
+            }
+
+            const formData = new FormData();
+            formData.append('images', item.file);
+            formData.append('provider', provider);
+
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const text = await response.text();
+                try {
+                    const data = JSON.parse(text);
+                    const output = data.result || data.error;
+                    resultBox.value += (resultBox.value ? '\n' : '') + output;
+
+                    if (statusEl) {
+                        const isErr = output.startsWith('Error processing');
+                        statusEl.className = isErr ? 'thumb-status error' : 'thumb-status done';
+                        statusEl.innerText = isErr ? 'Error ❌' : 'Done ✅';
+                    }
+                } catch (e) {
+                    resultBox.value += `\n[Server Timeout on ${item.file.name}]`;
+                    if (statusEl) {
+                        statusEl.className = 'thumb-status error';
+                        statusEl.innerText = 'Timeout ❌';
+                    }
+                }
+            } catch (err) {
+                resultBox.value += `\n[Network Error on ${item.file.name}]: ${err.message}`;
+                if (statusEl) {
+                    statusEl.className = 'thumb-status error';
+                    statusEl.innerText = 'Failed ❌';
+                }
+            }
+
+            updateRowCount();
+        }
+
+        progressBar.style.width = '100%';
+        progressPercent.innerText = '100%';
+        progressStatus.innerText = 'Completed!';
+        processBtn.disabled = false;
+        clearBtn.disabled = false;
+        showToast("✅ Extraction completed!");
+    }
+
+    function updateRowCount() {
+        const lines = resultBox.value.split('\n').filter(line => line.trim() !== '');
+        rowCountBadge.innerText = `${lines.length} Row${lines.length === 1 ? '' : 's'}`;
+    }
+
+    function copyResult() {
+        if (!resultBox.value.trim()) {
+            showToast("⚠️ Nothing to copy!");
+            return;
+        }
+        navigator.clipboard.writeText(resultBox.value);
+        showToast("✅ Copied to clipboard!");
+    }
+
+    function downloadCSV() {
+        const text = resultBox.value.trim();
+        if (!text) {
+            showToast("⚠️ Nothing to download!");
+            return;
+        }
+        const blob = new Blob([text], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gr_data_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        showToast("⬇️ CSV Downloaded!");
+    }
+
+    function showToast(msg) {
+        const toast = document.getElementById('toast');
+        toast.innerText = msg;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2800);
+    }
+</script>
+
+</body>
+</html>
